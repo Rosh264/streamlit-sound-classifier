@@ -1,0 +1,6 @@
+torch
+torchaudio
+streamlit
+streamlit-webrtc
+pandas
+scipy
