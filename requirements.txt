@@ -1,6 +1,4 @@
-torch==2.0.0
-torchaudio==2.0.0
-streamlit==1.26.0
-streamlit-audiorec==0.0.10
-pandas==2.0.3
-scipy==1.11.2
+streamlit
+torch
+torchaudio
+streamlit-audiorec
