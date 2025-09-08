@@ -2,17 +2,14 @@ import streamlit as st
 import torch
 import torchaudio
 import os
-import numpy as np
-from scipy.io.wavfile import read as read_wav
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
 import io
+import numpy as np
+from st_audiorec import st_audiorec # Import the new, more stable recorder
 
 # --- Step 1: Define the Model Architecture and Load the Expert Model ---
-# This part is loaded only once, thanks to Streamlit's caching.
-
 @st.cache_resource
 def load_model():
-    # A. Define the Model Architecture (copy-pasted from your training code)
+    # A. Define the Model Architecture
     def conv_block(in_channels, out_channels, kernel_size, stride, padding):
         return torch.nn.Sequential(
             torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding),
@@ -40,7 +37,7 @@ def load_model():
     # B. Load the trained model weights
     model_path = "audio_classifier_model.pth"
     if not os.path.exists(model_path):
-        st.error("The model file 'audio_classifier_model.pth' was not found.")
+        st.error("The model file 'audio_classifier_model.pth' was not found. This can happen during the initial build. The app should work shortly.")
         st.stop()
         
     model = AudioCNN(num_classes=7)
@@ -75,7 +72,6 @@ def predict(waveform, sr):
         output = model(spectrogram)
         probabilities = torch.nn.functional.softmax(output, dim=1)[0]
         confidences = {AV_CLASSES[i]: float(probabilities[i]) for i in range(len(AV_CLASSES))}
-        # Find the class with the highest probability
         prediction_index = output.argmax(dim=1).item()
         predicted_class = inv_class_map[prediction_index]
         
@@ -86,24 +82,20 @@ def predict(waveform, sr):
 st.set_page_config(layout="wide")
 st.title("Urban Sound Classifier 🔊")
 st.write("A web app to classify urban sounds, replicating the paper 'Improving the Environmental Perception of Autonomous Vehicles'.")
-st.write("Upload an audio file or use the live recorder to classify a sound into one of 7 categories.")
+st.write("---")
 
-# Create columns for the layout
 col1, col2 = st.columns(2)
 
 with col1:
     st.header("Upload an Audio File")
-    uploaded_file = st.file_uploader("Choose a WAV file", type="wav")
-    
+    uploaded_file = st.file_uploader("Choose a WAV or MP3 file", type=["wav", "mp3"])
+
     if uploaded_file is not None:
-        # To read file as bytes:
         bytes_data = uploaded_file.getvalue()
-        # To convert to a tensor
         waveform, sr = torchaudio.load(io.BytesIO(bytes_data))
-        
         st.audio(bytes_data, format='audio/wav')
 
-        if st.button("Classify Uploaded File"):
+        if st.button("Classify Uploaded Audio"):
             with st.spinner('Analyzing sound...'):
                 prediction, confidences = predict(waveform, sr)
                 st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
@@ -112,55 +104,34 @@ with col1:
                     st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
 
 with col2:
-    st.header("Live Audio Recorder")
-    st.write("Click 'start' to record a 4-second clip. The prediction will appear automatically.")
+    st.header("Record Audio from Microphone")
+    
+    # Use the new, more stable audio recorder
+    wav_audio_data = st_audiorec()
 
-    # This class handles processing audio from the microphone
-    class AudioRecorder(AudioProcessorBase):
-        def __init__(self) -> None:
-            self.audio_buffer = []
-
-        def recv(self, frame):
-            # The audio comes in frames, we buffer them
-            self.audio_buffer.append(frame.to_ndarray())
-            return frame
-
-    webrtc_ctx = webrtc_streamer(
-        key="audio-recorder",
-        # CORRECTED LINE: Use a string instead of the enum
-        mode="sendonly",
-        audio_processor_factory=AudioRecorder,
-        media_stream_constraints={"audio": True, "video": False},
-    )
-
-    if not webrtc_ctx.state.playing:
-        st.write("Recorder is off.")
-    else:
-        st.write("Recording...")
+    if wav_audio_data is not None:
+        st.audio(wav_audio_data, format='audio/wav')
         
-    if st.button("Classify Recording"):
-        if webrtc_ctx.audio_processor:
-            audio_frames = webrtc_ctx.audio_processor.audio_buffer
-            if audio_frames:
-                # Combine the audio frames into a single numpy array
-                sound_chunk = np.concatenate(audio_frames, axis=1)
-                # The sample rate from the browser is usually 48000
-                sr = 48000 
-                
-                # Convert to a torch tensor
-                waveform = torch.from_numpy(sound_chunk).float()
+        if st.button("Classify Recorded Audio"):
+            # The recorder gives us raw wav bytes, we need to load them
+            waveform, sr = torchaudio.load(io.BytesIO(wav_audio_data))
+            with st.spinner('Analyzing sound...'):
+                prediction, confidences = predict(waveform, sr)
+                st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
+                st.write("--- Confidence Scores ---")
+                for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
+                    st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
+```
 
-                with st.spinner('Analyzing sound...'):
-                    prediction, confidences = predict(waveform, sr)
-                    st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
-                    st.write("--- Confidence Scores ---")
-                    for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
-                        st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
-                
-                # Clear the buffer
-                webrtc_ctx.audio_processor.audio_buffer = []
-            else:
-                st.warning("No audio recorded yet. Please start the recorder and make a sound.")
-        else:
-            st.error("Audio recorder is not ready.")
+#### 2. File: `requirements.txt` (Final Version)
+
+This version removes the buggy library, adds the new stable one, and **locks in the version numbers** to prevent future conflicts.
+
+```
+torch==2.0.0
+torchaudio==2.0.0
+streamlit==1.26.0
+streamlit-audiorec==0.0.10
+pandas==2.0.3
+scipy==1.11.2
 
