@@ -127,7 +127,8 @@ with col2:
 
     webrtc_ctx = webrtc_streamer(
         key="audio-recorder",
-        mode=WebRtcMode.SEND_ONLY,
+        # CORRECTED LINE: Use a string instead of the enum
+        mode="sendonly",
         audio_processor_factory=AudioRecorder,
         media_stream_constraints={"audio": True, "video": False},
     )
@@ -162,3 +163,4 @@ with col2:
                 st.warning("No audio recorded yet. Please start the recorder and make a sound.")
         else:
             st.error("Audio recorder is not ready.")
+
