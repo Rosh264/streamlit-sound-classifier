@@ -4,7 +4,7 @@ import torchaudio
 import os
 import io
 import numpy as np
-from st_audiorec import st_audiorec
+from st_audiorec import st_audiorec # Import the new, more stable recorder
 import matplotlib.pyplot as plt
 
 # --- Step 1: Define Model Architecture & Load Expert Model ---
@@ -55,7 +55,6 @@ AV_CLASSES = ['air_conditioner', 'car_horn', 'children_playing', 'dog_bark', 'en
 inv_class_map = {i: name for i, name in enumerate(AV_CLASSES)}
 
 def preprocess_audio(waveform, sr):
-    """Takes a waveform and preprocesses it for the model."""
     if waveform.shape[0] == 1: 
         waveform = torch.cat([waveform, waveform], dim=0)
     target_sr = 44100
@@ -69,12 +68,10 @@ def preprocess_audio(waveform, sr):
     return waveform, target_sr
 
 def create_spectrogram(waveform, sr):
-    """Creates a Mel Spectrogram from a waveform."""
     mel_transform = torchaudio.transforms.MelSpectrogram(sample_rate=sr, n_fft=1024, hop_length=512, n_mels=64)
     return mel_transform(waveform)
 
 def predict(spectrogram):
-    """Takes a spectrogram and returns the model's prediction."""
     mean, std = spectrogram.mean(), spectrogram.std()
     spectrogram = (spectrogram - mean) / (std + 1e-6)
     spectrogram = spectrogram.unsqueeze(0).to(torch.device("cpu"))
@@ -87,7 +84,6 @@ def predict(spectrogram):
     return confidences
 
 def plot_waveform(waveform, sr, title="Waveform"):
-    """Plots the audio waveform."""
     waveform_numpy = waveform.numpy()
     num_channels, num_frames = waveform_numpy.shape
     time_axis = np.linspace(0, num_frames / sr, num=num_frames)
@@ -104,7 +100,6 @@ def plot_waveform(waveform, sr, title="Waveform"):
     return fig
 
 def plot_spectrogram(specgram, title="Mel Spectrogram"):
-    """Plots the Mel Spectrogram."""
     fig = plt.figure(figsize=(10, 4))
     plt.imshow(torchaudio.transforms.AmplitudeToDB()(specgram)[0].numpy(), cmap='viridis', aspect='auto', origin='lower')
     plt.title(title)
@@ -134,11 +129,9 @@ with col1:
                 processed_waveform, processed_sr = preprocess_audio(waveform, sr)
                 spectrogram = create_spectrogram(processed_waveform, processed_sr)
                 
-                # Display visualizations
                 st.pyplot(plot_waveform(processed_waveform, processed_sr))
                 st.pyplot(plot_spectrogram(spectrogram))
 
-                # Get prediction
                 confidences = predict(spectrogram)
                 prediction = max(confidences, key=confidences.get)
                 st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
@@ -159,11 +152,9 @@ with col2:
                 processed_waveform, processed_sr = preprocess_audio(waveform, sr)
                 spectrogram = create_spectrogram(processed_waveform, processed_sr)
                 
-                # Display visualizations
                 st.pyplot(plot_waveform(processed_waveform, processed_sr))
                 st.pyplot(plot_spectrogram(spectrogram))
 
-                # Get prediction
                 confidences = predict(spectrogram)
                 prediction = max(confidences, key=confidences.get)
                 st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
@@ -172,17 +163,16 @@ with col2:
                     st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
 ```
 
-#### 2. File to EDIT: `requirements.txt`
+#### 2. File to EDIT: `requirements.txt` (Final Version)
 
-You need to add `matplotlib` to this file so Streamlit can install the plotting library.
-1.  In your GitHub repository, edit the `requirements.txt` file.
-2.  Add `matplotlib` to the list. The final file should look like this:
+This version removes the buggy library, adds the new stable one, and **locks in the version numbers** to prevent future conflicts.
 
-    ```
-    streamlit
-    torch
-    torchaudio
-    streamlit-audiorec
-    matplotlib
-    
+```
+torch==2.0.0
+torchaudio==2.0.0
+streamlit==1.26.0
+streamlit-audiorec==0.0.10
+pandas==2.0.3
+scipy==1.11.2
+matplotlib==3.7.2
 
