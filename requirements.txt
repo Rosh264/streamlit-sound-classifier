@@ -2,3 +2,4 @@ streamlit
 torch
 torchaudio
 streamlit-audiorec
+matplotlib
