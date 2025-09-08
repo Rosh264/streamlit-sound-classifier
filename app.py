@@ -4,9 +4,9 @@ import torchaudio
 import os
 import io
 import numpy as np
-from st_audiorec import st_audiorec # Import the new, more stable recorder
+from st_audiorec import st_audiorec # Import the stable recorder
 
-# --- Step 1: Define the Model Architecture and Load the Expert Model ---
+# --- Step 1: Define Model Architecture & Load Expert Model ---
 @st.cache_resource
 def load_model():
     # A. Define the Model Architecture
@@ -37,7 +37,7 @@ def load_model():
     # B. Load the trained model weights
     model_path = "audio_classifier_model.pth"
     if not os.path.exists(model_path):
-        st.error("The model file 'audio_classifier_model.pth' was not found. This can happen during the initial build. The app should work shortly.")
+        st.error("Model file not found. The app may be building. Please refresh in a moment.")
         st.stop()
         
     model = AudioCNN(num_classes=7)
@@ -72,16 +72,14 @@ def predict(waveform, sr):
         output = model(spectrogram)
         probabilities = torch.nn.functional.softmax(output, dim=1)[0]
         confidences = {AV_CLASSES[i]: float(probabilities[i]) for i in range(len(AV_CLASSES))}
-        prediction_index = output.argmax(dim=1).item()
-        predicted_class = inv_class_map[prediction_index]
         
-    return predicted_class, confidences
+    return confidences
 
 # --- Step 3: Build the Streamlit User Interface ---
 
 st.set_page_config(layout="wide")
 st.title("Urban Sound Classifier 🔊")
-st.write("A web app to classify urban sounds, replicating the paper 'Improving the Environmental Perception of Autonomous Vehicles'.")
+st.write("This app classifies urban sounds using a CNN model trained on the UrbanSound8K dataset.")
 st.write("---")
 
 col1, col2 = st.columns(2)
@@ -97,7 +95,9 @@ with col1:
 
         if st.button("Classify Uploaded Audio"):
             with st.spinner('Analyzing sound...'):
-                prediction, confidences = predict(waveform, sr)
+                confidences = predict(waveform, sr)
+                # Find the top prediction
+                prediction = max(confidences, key=confidences.get)
                 st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
                 st.write("--- Confidence Scores ---")
                 for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
@@ -105,33 +105,19 @@ with col1:
 
 with col2:
     st.header("Record Audio from Microphone")
-    
-    # Use the new, more stable audio recorder
-    wav_audio_data = st_audiorec()
+    wav_audio_data = st_audiorec() # This creates the recorder widget
 
     if wav_audio_data is not None:
         st.audio(wav_audio_data, format='audio/wav')
         
         if st.button("Classify Recorded Audio"):
-            # The recorder gives us raw wav bytes, we need to load them
             waveform, sr = torchaudio.load(io.BytesIO(wav_audio_data))
             with st.spinner('Analyzing sound...'):
-                prediction, confidences = predict(waveform, sr)
+                confidences = predict(waveform, sr)
+                # Find the top prediction
+                prediction = max(confidences, key=confidences.get)
                 st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
                 st.write("--- Confidence Scores ---")
                 for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
                     st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
-```
-
-#### 2. File: `requirements.txt` (Final Version)
-
-This version removes the buggy library, adds the new stable one, and **locks in the version numbers** to prevent future conflicts.
-
-```
-torch==2.0.0
-torchaudio==2.0.0
-streamlit==1.26.0
-streamlit-audiorec==0.0.10
-pandas==2.0.3
-scipy==1.11.2
 
