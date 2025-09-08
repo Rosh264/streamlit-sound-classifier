@@ -4,7 +4,7 @@ import torchaudio
 import os
 import io
 import numpy as np
-from st_audiorec import st_audiorec # Import the new, more stable recorder
+from st_audiorec import st_audiorec
 import matplotlib.pyplot as plt
 
 # --- Step 1: Define Model Architecture & Load Expert Model ---
@@ -31,8 +31,13 @@ def load_model():
             self.fc1 = torch.nn.Linear(256, num_classes)
 
         def forward(self, x):
-            x = self.conv1(x); x = self.conv2(x); x = self.conv3(x); x = self.conv4(x)
-            x = self.adaptive_pool(x); x = self.flatten(x); x = self.fc1(x)
+            x = self.conv1(x)
+            x = self.conv2(x)
+            x = self.conv3(x)
+            x = self.conv4(x)
+            x = self.adaptive_pool(x)
+            x = self.flatten(x)
+            x = self.fc1(x)
             return x
 
     # B. Load the trained model weights
@@ -129,9 +134,11 @@ with col1:
                 processed_waveform, processed_sr = preprocess_audio(waveform, sr)
                 spectrogram = create_spectrogram(processed_waveform, processed_sr)
                 
+                # Display visualizations
                 st.pyplot(plot_waveform(processed_waveform, processed_sr))
                 st.pyplot(plot_spectrogram(spectrogram))
 
+                # Get prediction
                 confidences = predict(spectrogram)
                 prediction = max(confidences, key=confidences.get)
                 st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
@@ -141,7 +148,7 @@ with col1:
 
 with col2:
     st.header("Record Audio from Microphone")
-    wav_audio_data = st_audiorec()
+    wav_audio_data = st_audiorec() # This creates the recorder widget
 
     if wav_audio_data is not None:
         st.audio(wav_audio_data, format='audio/wav')
@@ -152,27 +159,15 @@ with col2:
                 processed_waveform, processed_sr = preprocess_audio(waveform, sr)
                 spectrogram = create_spectrogram(processed_waveform, processed_sr)
                 
+                # Display visualizations
                 st.pyplot(plot_waveform(processed_waveform, processed_sr))
                 st.pyplot(plot_spectrogram(spectrogram))
 
+                # Get prediction
                 confidences = predict(spectrogram)
                 prediction = max(confidences, key=confidences.get)
                 st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
                 st.write("--- Confidence Scores ---")
                 for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
                     st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
-```
-
-#### 2. File to EDIT: `requirements.txt` (Final Version)
-
-This version removes the buggy library, adds the new stable one, and **locks in the version numbers** to prevent future conflicts.
-
-```
-torch==2.0.0
-torchaudio==2.0.0
-streamlit==1.26.0
-streamlit-audiorec==0.0.10
-pandas==2.0.3
-scipy==1.11.2
-matplotlib==3.7.2
 
