@@ -5,6 +5,7 @@ import os
 import io
 import numpy as np
 from st_audiorec import st_audiorec # Import the stable recorder
+import matplotlib.pyplot as plt
 
 # --- Step 1: Define Model Architecture & Load Expert Model ---
 @st.cache_resource
@@ -49,31 +50,61 @@ def load_model():
 
 model = load_model()
 
-# --- Step 2: Define the Prediction Function ---
+# --- Step 2: Define the Prediction and Visualization Functions ---
 AV_CLASSES = ['air_conditioner', 'car_horn', 'children_playing', 'dog_bark', 'engine_idling', 'gun_shot', 'siren']
 inv_class_map = {i: name for i, name in enumerate(AV_CLASSES)}
 
-def predict(waveform, sr):
-    # Preprocess the waveform
+def preprocess_audio(waveform, sr):
+    """Takes a waveform and preprocesses it for the model."""
     if waveform.shape[0] == 1: waveform = torch.cat([waveform, waveform], dim=0)
     target_sr = 44100; num_samples = target_sr * 4
     if sr != target_sr: waveform = torchaudio.transforms.Resample(sr, target_sr)(waveform)
     if waveform.shape[1] > num_samples: waveform = waveform[:, :num_samples]
     else: waveform = torch.nn.functional.pad(waveform, (0, num_samples - waveform.shape[1]))
-    
-    mel_transform = torchaudio.transforms.MelSpectrogram(sample_rate=target_sr, n_fft=1024, hop_length=512, n_mels=64)
-    spectrogram = mel_transform(waveform)
+    return waveform, target_sr
+
+def create_spectrogram(waveform, sr):
+    """Creates a Mel Spectrogram from a waveform."""
+    mel_transform = torchaudio.transforms.MelSpectrogram(sample_rate=sr, n_fft=1024, hop_length=512, n_mels=64)
+    return mel_transform(waveform)
+
+def predict(spectrogram):
+    """Takes a spectrogram and returns the model's prediction."""
     mean, std = spectrogram.mean(), spectrogram.std()
     spectrogram = (spectrogram - mean) / (std + 1e-6)
     spectrogram = spectrogram.unsqueeze(0).to(torch.device("cpu"))
     
-    # Make prediction
     with torch.no_grad():
         output = model(spectrogram)
         probabilities = torch.nn.functional.softmax(output, dim=1)[0]
         confidences = {AV_CLASSES[i]: float(probabilities[i]) for i in range(len(AV_CLASSES))}
         
     return confidences
+
+def plot_waveform(waveform, sr, title="Waveform"):
+    """Plots the audio waveform."""
+    waveform = waveform.numpy()
+    num_channels, num_frames = waveform.shape
+    time_axis = torch.arange(0, num_frames) / sr
+
+    fig, axes = plt.subplots(num_channels, 1, figsize=(10, 3))
+    if num_channels == 1:
+        axes = [axes]
+    for i in range(num_channels):
+        axes[i].plot(time_axis, waveform[i], linewidth=1)
+        axes[i].grid(True)
+        if num_channels > 1:
+            axes[i].set_ylabel(f"Channel {i+1}")
+    fig.suptitle(title)
+    return fig
+
+def plot_spectrogram(specgram, title="Mel Spectrogram"):
+    """Plots the Mel Spectrogram."""
+    fig = plt.figure(figsize=(10, 4))
+    plt.imshow(torchaudio.transforms.AmplitudeToDB()(specgram)[0].numpy(), cmap='viridis', aspect='auto', origin='lower')
+    plt.title(title)
+    plt.colorbar(format='%+2.0f dB')
+    return fig
 
 # --- Step 3: Build the Streamlit User Interface ---
 
@@ -95,8 +126,15 @@ with col1:
 
         if st.button("Classify Uploaded Audio"):
             with st.spinner('Analyzing sound...'):
-                confidences = predict(waveform, sr)
-                # Find the top prediction
+                processed_waveform, processed_sr = preprocess_audio(waveform, sr)
+                spectrogram = create_spectrogram(processed_waveform, processed_sr)
+                
+                # Display visualizations
+                st.pyplot(plot_waveform(processed_waveform, processed_sr))
+                st.pyplot(plot_spectrogram(spectrogram))
+
+                # Get prediction
+                confidences = predict(spectrogram)
                 prediction = max(confidences, key=confidences.get)
                 st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
                 st.write("--- Confidence Scores ---")
@@ -105,7 +143,7 @@ with col1:
 
 with col2:
     st.header("Record Audio from Microphone")
-    wav_audio_data = st_audiorec() # This creates the recorder widget
+    wav_audio_data = st_audiorec()
 
     if wav_audio_data is not None:
         st.audio(wav_audio_data, format='audio/wav')
@@ -113,11 +151,34 @@ with col2:
         if st.button("Classify Recorded Audio"):
             waveform, sr = torchaudio.load(io.BytesIO(wav_audio_data))
             with st.spinner('Analyzing sound...'):
-                confidences = predict(waveform, sr)
-                # Find the top prediction
+                processed_waveform, processed_sr = preprocess_audio(waveform, sr)
+                spectrogram = create_spectrogram(processed_waveform, processed_sr)
+                
+                # Display visualizations
+                st.pyplot(plot_waveform(processed_waveform, processed_sr))
+                st.pyplot(plot_spectrogram(spectrogram))
+
+                # Get prediction
+                confidences = predict(spectrogram)
                 prediction = max(confidences, key=confidences.get)
                 st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
                 st.write("--- Confidence Scores ---")
                 for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
                     st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
+
+```
+
+#### 2. File to EDIT: `requirements.txt`
+
+You need to add `matplotlib` to this file so Streamlit knows to install the plotting library.
+1.  In your GitHub repository, edit the `requirements.txt` file.
+2.  Add `matplotlib` to the list. The final file should look like this:
+
+    ```
+    streamlit
+    torch
+    torchaudio
+    streamlit-audiorec
+    matplotlib
+    
 
