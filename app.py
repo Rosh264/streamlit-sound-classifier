@@ -4,7 +4,7 @@ import torchaudio
 import os
 import io
 import numpy as np
-from st_audiorec import st_audiorec # Import the stable recorder
+from st_audiorec import st_audiorec
 import matplotlib.pyplot as plt
 
 # --- Step 1: Define Model Architecture & Load Expert Model ---
@@ -31,8 +31,13 @@ def load_model():
             self.fc1 = torch.nn.Linear(256, num_classes)
 
         def forward(self, x):
-            x = self.conv1(x); x = self.conv2(x); x = self.conv3(x); x = self.conv4(x)
-            x = self.adaptive_pool(x); x = self.flatten(x); x = self.fc1(x)
+            x = self.conv1(x)
+            x = self.conv2(x)
+            x = self.conv3(x)
+            x = self.conv4(x)
+            x = self.adaptive_pool(x)
+            x = self.flatten(x)
+            x = self.fc1(x)
             return x
 
     # B. Load the trained model weights
@@ -56,11 +61,16 @@ inv_class_map = {i: name for i, name in enumerate(AV_CLASSES)}
 
 def preprocess_audio(waveform, sr):
     """Takes a waveform and preprocesses it for the model."""
-    if waveform.shape[0] == 1: waveform = torch.cat([waveform, waveform], dim=0)
-    target_sr = 44100; num_samples = target_sr * 4
-    if sr != target_sr: waveform = torchaudio.transforms.Resample(sr, target_sr)(waveform)
-    if waveform.shape[1] > num_samples: waveform = waveform[:, :num_samples]
-    else: waveform = torch.nn.functional.pad(waveform, (0, num_samples - waveform.shape[1]))
+    if waveform.shape[0] == 1: 
+        waveform = torch.cat([waveform, waveform], dim=0)
+    target_sr = 44100
+    num_samples = target_sr * 4
+    if sr != target_sr: 
+        waveform = torchaudio.transforms.Resample(sr, target_sr)(waveform)
+    if waveform.shape[1] > num_samples: 
+        waveform = waveform[:, :num_samples]
+    else: 
+        waveform = torch.nn.functional.pad(waveform, (0, num_samples - waveform.shape[1]))
     return waveform, target_sr
 
 def create_spectrogram(waveform, sr):
@@ -83,15 +93,15 @@ def predict(spectrogram):
 
 def plot_waveform(waveform, sr, title="Waveform"):
     """Plots the audio waveform."""
-    waveform = waveform.numpy()
-    num_channels, num_frames = waveform.shape
-    time_axis = torch.arange(0, num_frames) / sr
+    waveform_numpy = waveform.numpy()
+    num_channels, num_frames = waveform_numpy.shape
+    time_axis = np.linspace(0, num_frames / sr, num=num_frames)
 
     fig, axes = plt.subplots(num_channels, 1, figsize=(10, 3))
     if num_channels == 1:
         axes = [axes]
     for i in range(num_channels):
-        axes[i].plot(time_axis, waveform[i], linewidth=1)
+        axes[i].plot(time_axis, waveform_numpy[i], linewidth=1)
         axes[i].grid(True)
         if num_channels > 1:
             axes[i].set_ylabel(f"Channel {i+1}")
@@ -165,20 +175,4 @@ with col2:
                 st.write("--- Confidence Scores ---")
                 for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
                     st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
-
-```
-
-#### 2. File to EDIT: `requirements.txt`
-
-You need to add `matplotlib` to this file so Streamlit knows to install the plotting library.
-1.  In your GitHub repository, edit the `requirements.txt` file.
-2.  Add `matplotlib` to the list. The final file should look like this:
-
-    ```
-    streamlit
-    torch
-    torchaudio
-    streamlit-audiorec
-    matplotlib
-    
 
