@@ -31,13 +31,8 @@ def load_model():
             self.fc1 = torch.nn.Linear(256, num_classes)
 
         def forward(self, x):
-            x = self.conv1(x)
-            x = self.conv2(x)
-            x = self.conv3(x)
-            x = self.conv4(x)
-            x = self.adaptive_pool(x)
-            x = self.flatten(x)
-            x = self.fc1(x)
+            x = self.conv1(x); x = self.conv2(x); x = self.conv3(x); x = self.conv4(x)
+            x = self.adaptive_pool(x); x = self.flatten(x); x = self.fc1(x)
             return x
 
     # B. Load the trained model weights
@@ -60,6 +55,7 @@ AV_CLASSES = ['air_conditioner', 'car_horn', 'children_playing', 'dog_bark', 'en
 inv_class_map = {i: name for i, name in enumerate(AV_CLASSES)}
 
 def preprocess_audio(waveform, sr):
+    """Takes a waveform and preprocesses it for the model."""
     if waveform.shape[0] == 1: 
         waveform = torch.cat([waveform, waveform], dim=0)
     target_sr = 44100
@@ -73,10 +69,12 @@ def preprocess_audio(waveform, sr):
     return waveform, target_sr
 
 def create_spectrogram(waveform, sr):
+    """Creates a Mel Spectrogram from a waveform."""
     mel_transform = torchaudio.transforms.MelSpectrogram(sample_rate=sr, n_fft=1024, hop_length=512, n_mels=64)
     return mel_transform(waveform)
 
 def predict(spectrogram):
+    """Takes a spectrogram and returns the model's prediction."""
     mean, std = spectrogram.mean(), spectrogram.std()
     spectrogram = (spectrogram - mean) / (std + 1e-6)
     spectrogram = spectrogram.unsqueeze(0).to(torch.device("cpu"))
@@ -89,6 +87,7 @@ def predict(spectrogram):
     return confidences
 
 def plot_waveform(waveform, sr, title="Waveform"):
+    """Plots the audio waveform."""
     waveform_numpy = waveform.numpy()
     num_channels, num_frames = waveform_numpy.shape
     time_axis = np.linspace(0, num_frames / sr, num=num_frames)
@@ -105,6 +104,7 @@ def plot_waveform(waveform, sr, title="Waveform"):
     return fig
 
 def plot_spectrogram(specgram, title="Mel Spectrogram"):
+    """Plots the Mel Spectrogram."""
     fig = plt.figure(figsize=(10, 4))
     plt.imshow(torchaudio.transforms.AmplitudeToDB()(specgram)[0].numpy(), cmap='viridis', aspect='auto', origin='lower')
     plt.title(title)
@@ -148,7 +148,7 @@ with col1:
 
 with col2:
     st.header("Record Audio from Microphone")
-    wav_audio_data = st_audiorec() # This creates the recorder widget
+    wav_audio_data = st_audiorec()
 
     if wav_audio_data is not None:
         st.audio(wav_audio_data, format='audio/wav')
@@ -170,4 +170,5 @@ with col2:
                 st.write("--- Confidence Scores ---")
                 for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
                     st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
+    
 
