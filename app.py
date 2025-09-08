@@ -31,13 +31,8 @@ def load_model():
             self.fc1 = torch.nn.Linear(256, num_classes)
 
         def forward(self, x):
-            x = self.conv1(x)
-            x = self.conv2(x)
-            x = self.conv3(x)
-            x = self.conv4(x)
-            x = self.adaptive_pool(x)
-            x = self.flatten(x)
-            x = self.fc1(x)
+            x = self.conv1(x); x = self.conv2(x); x = self.conv3(x); x = self.conv4(x)
+            x = self.adaptive_pool(x); x = self.flatten(x); x = self.fc1(x)
             return x
 
     # B. Load the trained model weights
@@ -175,4 +170,19 @@ with col2:
                 st.write("--- Confidence Scores ---")
                 for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
                     st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
+```
+
+#### 2. File to EDIT: `requirements.txt`
+
+You need to add `matplotlib` to this file so Streamlit can install the plotting library.
+1.  In your GitHub repository, edit the `requirements.txt` file.
+2.  Add `matplotlib` to the list. The final file should look like this:
+
+    ```
+    streamlit
+    torch
+    torchaudio
+    streamlit-audiorec
+    matplotlib
+    
 
