@@ -2,17 +2,15 @@ import streamlit as st
 import torch
 import torchaudio
 import os
-import numpy as np
-from scipy.io.wavfile import read as read_wav
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
 import io
+import numpy as np
+from st_audiorec import st_audiorec
+import matplotlib.pyplot as plt
 
-# --- Step 1: Define the Model Architecture and Load the Expert Model ---
-# This part is loaded only once, thanks to Streamlit's caching.
-
+# --- Step 1: Define Model Architecture & Load Expert Model ---
 @st.cache_resource
 def load_model():
-    # A. Define the Model Architecture (copy-pasted from your training code)
+    # A. Define the Model Architecture
     def conv_block(in_channels, out_channels, kernel_size, stride, padding):
         return torch.nn.Sequential(
             torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding),
@@ -40,7 +38,7 @@ def load_model():
     # B. Load the trained model weights
     model_path = "audio_classifier_model.pth"
     if not os.path.exists(model_path):
-        st.error("The model file 'audio_classifier_model.pth' was not found.")
+        st.error("Model file not found. The app may be building. Please refresh in a moment.")
         st.stop()
         
     model = AudioCNN(num_classes=7)
@@ -52,113 +50,133 @@ def load_model():
 
 model = load_model()
 
-# --- Step 2: Define the Prediction Function ---
+# --- Step 2: Define the Prediction and Visualization Functions ---
 AV_CLASSES = ['air_conditioner', 'car_horn', 'children_playing', 'dog_bark', 'engine_idling', 'gun_shot', 'siren']
 inv_class_map = {i: name for i, name in enumerate(AV_CLASSES)}
 
-def predict(waveform, sr):
-    # Preprocess the waveform
-    if waveform.shape[0] == 1: waveform = torch.cat([waveform, waveform], dim=0)
-    target_sr = 44100; num_samples = target_sr * 4
-    if sr != target_sr: waveform = torchaudio.transforms.Resample(sr, target_sr)(waveform)
-    if waveform.shape[1] > num_samples: waveform = waveform[:, :num_samples]
-    else: waveform = torch.nn.functional.pad(waveform, (0, num_samples - waveform.shape[1]))
-    
-    mel_transform = torchaudio.transforms.MelSpectrogram(sample_rate=target_sr, n_fft=1024, hop_length=512, n_mels=64)
-    spectrogram = mel_transform(waveform)
+def preprocess_audio(waveform, sr):
+    if waveform.shape[0] == 1: 
+        waveform = torch.cat([waveform, waveform], dim=0)
+    target_sr = 44100
+    num_samples = target_sr * 4
+    if sr != target_sr: 
+        waveform = torchaudio.transforms.Resample(sr, target_sr)(waveform)
+    if waveform.shape[1] > num_samples: 
+        waveform = waveform[:, :num_samples]
+    else: 
+        waveform = torch.nn.functional.pad(waveform, (0, num_samples - waveform.shape[1]))
+    return waveform, target_sr
+
+def create_spectrogram(waveform, sr):
+    mel_transform = torchaudio.transforms.MelSpectrogram(sample_rate=sr, n_fft=1024, hop_length=512, n_mels=64)
+    return mel_transform(waveform)
+
+def predict(spectrogram):
     mean, std = spectrogram.mean(), spectrogram.std()
     spectrogram = (spectrogram - mean) / (std + 1e-6)
     spectrogram = spectrogram.unsqueeze(0).to(torch.device("cpu"))
     
-    # Make prediction
     with torch.no_grad():
         output = model(spectrogram)
         probabilities = torch.nn.functional.softmax(output, dim=1)[0]
         confidences = {AV_CLASSES[i]: float(probabilities[i]) for i in range(len(AV_CLASSES))}
-        # Find the class with the highest probability
-        prediction_index = output.argmax(dim=1).item()
-        predicted_class = inv_class_map[prediction_index]
         
-    return predicted_class, confidences
+    return confidences
+
+def plot_waveform(waveform, sr, title="Waveform"):
+    waveform_numpy = waveform.numpy()
+    num_channels, num_frames = waveform_numpy.shape
+    time_axis = np.linspace(0, num_frames / sr, num=num_frames)
+
+    fig, axes = plt.subplots(num_channels, 1, figsize=(10, 3))
+    plt.style.use('dark_background')
+    if num_channels == 1:
+        axes = [axes]
+    for i in range(num_channels):
+        axes[i].plot(time_axis, waveform_numpy[i], linewidth=1)
+        axes[i].grid(True)
+        if num_channels > 1:
+            axes[i].set_ylabel(f"Channel {i+1}")
+    fig.suptitle(title)
+    return fig
+
+def plot_spectrogram(specgram, title="Mel Spectrogram"):
+    fig = plt.figure(figsize=(10, 4))
+    plt.style.use('dark_background')
+    plt.imshow(torchaudio.transforms.AmplitudeToDB()(specgram)[0].numpy(), cmap='viridis', aspect='auto', origin='lower')
+    plt.title(title)
+    plt.colorbar(format='%+2.0f dB')
+    return fig
 
 # --- Step 3: Build the Streamlit User Interface ---
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="Urban Sound Classifier")
 st.title("Urban Sound Classifier 🔊")
-st.write("A web app to classify urban sounds, replicating the paper 'Improving the Environmental Perception of Autonomous Vehicles'.")
-st.write("Upload an audio file or use the live recorder to classify a sound into one of 7 categories.")
+st.write("This app classifies urban sounds using a CNN model trained on the UrbanSound8K dataset.")
+st.write("---")
 
-# Create columns for the layout
+# Use session state to store the recorded audio
+if 'recorded_audio' not in st.session_state:
+    st.session_state.recorded_audio = None
+
 col1, col2 = st.columns(2)
 
 with col1:
     st.header("Upload an Audio File")
-    uploaded_file = st.file_uploader("Choose a WAV file", type="wav")
-    
-    if uploaded_file is not None:
-        # To read file as bytes:
-        bytes_data = uploaded_file.getvalue()
-        # To convert to a tensor
-        waveform, sr = torchaudio.load(io.BytesIO(bytes_data))
-        
-        st.audio(bytes_data, format='audio/wav')
+    uploaded_file = st.file_uploader("Choose a WAV or MP3 file", type=["wav", "mp3"])
 
-        if st.button("Classify Uploaded File"):
+    if uploaded_file is not None:
+        st.audio(uploaded_file, format='audio/wav')
+
+        if st.button("Classify Uploaded Audio"):
             with st.spinner('Analyzing sound...'):
-                prediction, confidences = predict(waveform, sr)
+                bytes_data = uploaded_file.getvalue()
+                waveform, sr = torchaudio.load(io.BytesIO(bytes_data))
+                processed_waveform, processed_sr = preprocess_audio(waveform, sr)
+                spectrogram = create_spectrogram(processed_waveform, processed_sr)
+                
+                st.pyplot(plot_waveform(processed_waveform, processed_sr))
+                st.pyplot(plot_spectrogram(spectrogram))
+
+                confidences = predict(spectrogram)
+                prediction = max(confidences, key=confidences.get)
                 st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
                 st.write("--- Confidence Scores ---")
                 for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
                     st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
 
 with col2:
-    st.header("Live Audio Recorder")
-    st.write("Click 'start' to record a 4-second clip. The prediction will appear automatically.")
+    st.header("Record Audio from Microphone")
+    st.write("1. Click Start Recording. 2. Make a sound. 3. Click Stop. 4. Your recording will appear below with a classify button.")
+    
+    wav_audio_data = st_audiorec()
 
-    # This class handles processing audio from the microphone
-    class AudioRecorder(AudioProcessorBase):
-        def __init__(self) -> None:
-            self.audio_buffer = []
+    if wav_audio_data is not None:
+        # Store the recorded audio in session state
+        st.session_state.recorded_audio = wav_audio_data
+    
+    # Display the audio player and classify button only after a recording is made
+    if st.session_state.recorded_audio is not None:
+        st.audio(st.session_state.recorded_audio, format='audio/wav')
+        
+        if st.button("Classify Recorded Audio"):
+            waveform, sr = torchaudio.load(io.BytesIO(st.session_state.recorded_audio))
+            with st.spinner('Analyzing sound...'):
+                processed_waveform, processed_sr = preprocess_audio(waveform, sr)
+                spectrogram = create_spectrogram(processed_waveform, processed_sr)
+                
+                st.pyplot(plot_waveform(processed_waveform, processed_sr))
+                st.pyplot(plot_spectrogram(spectrogram))
 
-        def recv(self, frame):
-            # The audio comes in frames, we buffer them
-            self.audio_buffer.append(frame.to_ndarray())
-            return frame
+                confidences = predict(spectrogram)
+                prediction = max(confidences, key=confidences.get)
+                st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
+                st.write("--- Confidence Scores ---")
+                for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
+                    st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
 
-    webrtc_ctx = webrtc_streamer(
-        key="audio-recorder",
-        mode=WebRtcMode.SEND_ONLY,
-        audio_processor_factory=AudioRecorder,
-        media_stream_constraints={"audio": True, "video": False},
+    st.info(
+        "Note: Microphone recording can be unreliable on some desktop browsers due to strict security policies. "
+        "If you encounter issues, please try a different browser or use the file upload option."
     )
 
-    if not webrtc_ctx.state.playing:
-        st.write("Recorder is off.")
-    else:
-        st.write("Recording...")
-        
-    if st.button("Classify Recording"):
-        if webrtc_ctx.audio_processor:
-            audio_frames = webrtc_ctx.audio_processor.audio_buffer
-            if audio_frames:
-                # Combine the audio frames into a single numpy array
-                sound_chunk = np.concatenate(audio_frames, axis=1)
-                # The sample rate from the browser is usually 48000
-                sr = 48000 
-                
-                # Convert to a torch tensor
-                waveform = torch.from_numpy(sound_chunk).float()
-
-                with st.spinner('Analyzing sound...'):
-                    prediction, confidences = predict(waveform, sr)
-                    st.success(f"**Prediction:** {prediction.replace('_', ' ').title()}")
-                    st.write("--- Confidence Scores ---")
-                    for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
-                        st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
-                
-                # Clear the buffer
-                webrtc_ctx.audio_processor.audio_buffer = []
-            else:
-                st.warning("No audio recorded yet. Please start the recorder and make a sound.")
-        else:
-            st.error("Audio recorder is not ready.")
