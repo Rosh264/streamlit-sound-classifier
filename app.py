@@ -109,15 +109,10 @@ def plot_spectrogram(specgram, title="Mel Spectrogram"):
     return fig
 
 # --- Step 3: Build the Streamlit User Interface ---
-
-st.set_page_config(layout="wide", page_title="Urban Sound Classifier")
+st.set_page_config(layout="wide")
 st.title("Urban Sound Classifier 🔊")
 st.write("This app classifies urban sounds using a CNN model trained on the UrbanSound8K dataset.")
 st.write("---")
-
-# Use session state to store the recorded audio
-if 'recorded_audio' not in st.session_state:
-    st.session_state.recorded_audio = None
 
 col1, col2 = st.columns(2)
 
@@ -126,12 +121,12 @@ with col1:
     uploaded_file = st.file_uploader("Choose a WAV or MP3 file", type=["wav", "mp3"])
 
     if uploaded_file is not None:
-        st.audio(uploaded_file, format='audio/wav')
+        bytes_data = uploaded_file.getvalue()
+        waveform, sr = torchaudio.load(io.BytesIO(bytes_data))
+        st.audio(bytes_data, format='audio/wav')
 
         if st.button("Classify Uploaded Audio"):
             with st.spinner('Analyzing sound...'):
-                bytes_data = uploaded_file.getvalue()
-                waveform, sr = torchaudio.load(io.BytesIO(bytes_data))
                 processed_waveform, processed_sr = preprocess_audio(waveform, sr)
                 spectrogram = create_spectrogram(processed_waveform, processed_sr)
                 
@@ -147,20 +142,13 @@ with col1:
 
 with col2:
     st.header("Record Audio from Microphone")
-    st.write("1. Click Start Recording. 2. Make a sound. 3. Click Stop. 4. Your recording will appear below with a classify button.")
-    
     wav_audio_data = st_audiorec()
 
     if wav_audio_data is not None:
-        # Store the recorded audio in session state
-        st.session_state.recorded_audio = wav_audio_data
-    
-    # Display the audio player and classify button only after a recording is made
-    if st.session_state.recorded_audio is not None:
-        st.audio(st.session_state.recorded_audio, format='audio/wav')
+        st.audio(wav_audio_data, format='audio/wav')
         
         if st.button("Classify Recorded Audio"):
-            waveform, sr = torchaudio.load(io.BytesIO(st.session_state.recorded_audio))
+            waveform, sr = torchaudio.load(io.BytesIO(wav_audio_data))
             with st.spinner('Analyzing sound...'):
                 processed_waveform, processed_sr = preprocess_audio(waveform, sr)
                 spectrogram = create_spectrogram(processed_waveform, processed_sr)
@@ -174,9 +162,3 @@ with col2:
                 st.write("--- Confidence Scores ---")
                 for class_name, prob in sorted(confidences.items(), key=lambda item: item[1], reverse=True):
                     st.write(f"{class_name.replace('_', ' ').title()}: {prob:.2%}")
-
-    st.info(
-        "Note: Microphone recording can be unreliable on some desktop browsers due to strict security policies. "
-        "If you encounter issues, please try a different browser or use the file upload option."
-    )
-
