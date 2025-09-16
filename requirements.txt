@@ -4,3 +4,4 @@ streamlit
 streamlit-webrtc
 pandas
 scipy
+st_audiorec
