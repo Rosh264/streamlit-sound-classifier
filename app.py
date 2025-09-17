@@ -4,7 +4,7 @@ import torchaudio
 import os
 import io
 import numpy as np
-from st_audiorec import st_audiorec
+from streamlit_audiorec import st_audiorec
 import matplotlib.pyplot as plt
 
 # --- Step 1: Define Model Architecture & Load Expert Model ---
